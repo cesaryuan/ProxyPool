@@ -1,4 +1,6 @@
+from collections import OrderedDict
 from flask import Flask, g, request
+from IPSearcher.utils.searcher import IPSearcher
 from proxypool.storages.redis import RedisClient
 from proxypool.setting import API_HOST, API_PORT, API_THREADED, API_KEY, IS_DEV
 import functools
@@ -6,6 +8,8 @@ import functools
 __all__ = ['app']
 
 app = Flask(__name__)
+app.config['JSON_AS_ASCII'] = False # enable utf-8 encoding to display Chinese characters instead of \uxxxx in result responsed by count_by_region
+app.config['JSON_SORT_KEYS'] = False # disable sort keys to customize the order of result responsed by count_by_region
 if IS_DEV:
     app.debug = True
 
@@ -86,6 +90,32 @@ def get_count():
     """
     conn = get_conn()
     return str(conn.count())
+
+
+@app.route('/count_by_region')
+@auth_required
+def get_count_by_region():
+    """
+    get the count of proxies by region
+    :return: dict
+    """
+    # IPSearcher is a singleton class, so we can initialize it here
+    searcher = IPSearcher()
+    conn = get_conn()
+    proxies = conn.all()
+    result = {}
+    if proxies:
+        for proxy in proxies:
+            try:
+                country = searcher.search(proxy.host).country
+            except:
+                country = 'Unknown'
+            if country in result:
+                result[country] += 1
+            else:
+                result[country] = 1
+    result = OrderedDict(sorted(result.items(), key=lambda t: t[1], reverse=True))
+    return result
 
 
 if __name__ == '__main__':
